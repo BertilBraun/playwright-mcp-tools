@@ -1,6 +1,3 @@
-import argparse
-import asyncio
-import threading
 from itertools import groupby
 from pathlib import Path
 
@@ -8,7 +5,6 @@ import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
-from mcp.server.fastmcp import FastMCP
 
 import dailydose
 import kleinanzeigen
@@ -92,28 +88,5 @@ def _render_card(desc: dict) -> str:
     )
 
 
-def _start_mcp() -> None:
-    mcp = FastMCP('MCP Services', host='0.0.0.0', port=8001)
-    for service in _SERVICES:
-        service.register(mcp)
-    mcp.run(transport='sse')
-
-
-async def _serve() -> None:
-    mcp_thread = threading.Thread(target=_start_mcp, daemon=True)
-    mcp_thread.start()
-    print('MCP SSE server starting on http://localhost:8001/sse')
-    config = uvicorn.Config(app, host='0.0.0.0', port=8000, log_level='info')
-    await uvicorn.Server(config).serve()
-
-
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--production', action='store_true')
-    args = parser.parse_args()
-
-    if args.production:
-        asyncio.run(_serve())
-    else:
-        print('Dev mode: MCP server disabled, reload enabled')
-        uvicorn.run('run_all:app', host='0.0.0.0', port=8000, log_level='info', reload=True)
+    uvicorn.run('run_all:app', host='0.0.0.0', port=8000, log_level='info', reload=True)
