@@ -1,3 +1,5 @@
+import base64
+import re
 import tempfile
 import urllib.request
 from pathlib import Path
@@ -19,11 +21,11 @@ _PRICE_TYPE_LABELS: dict[str, str] = {
 
 TOOL_DESCRIPTION = {
     'name': 'post_kleinanzeige',
+    'endpoint': '/kleinanzeigen/post/',
     'description': (
         'Fill in a new Kleinanzeigen listing form. '
         'The browser stays open so you can select the category and submit manually. '
-        'Images accept local file paths or https:// URLs. '
-        'First-time use: set KLEINANZEIGEN_HEADLESS=false and log in manually — the session is saved.'
+        'First-time use: set KLEINANZEIGEN_HEADLESS=false to log in — the session is then saved.'
     ),
     'parameters': {
         'title': {'type': 'string', 'description': 'Listing title (max 65 characters)'},
@@ -35,16 +37,9 @@ TOOL_DESCRIPTION = {
             'description': 'Price type',
             'default': 'FIXED',
         },
-        'ad_type': {
-            'type': 'string',
-            'enum': ['OFFER', 'WANTED'],
-            'description': 'Offer or wanted listing',
-            'default': 'OFFER',
-        },
-        'zip_code': {'type': 'string', 'description': 'Postal code (PLZ), leave empty to keep profile default'},
         'images': {
-            'type': 'array',
-            'description': 'Local file paths or https:// URLs (up to 20)',
+            'type': 'files',
+            'description': 'Photos for the listing (up to 20)',
         },
     },
 }
@@ -60,8 +55,6 @@ class PostRequest(BaseModel):
     description: str
     price_eur: int = 0
     price_type: Literal['FIXED', 'NEGOTIABLE', 'GIVE_AWAY'] = 'FIXED'
-    ad_type: Literal['OFFER', 'WANTED'] = 'OFFER'
-    zip_code: str = ''
     images: list[str] = []
 
 
@@ -77,8 +70,6 @@ async def run(request: PostRequest) -> str:
         request.description,
         request.price_eur,
         request.price_type,
-        request.ad_type,
-        request.zip_code,
         request.images,
     )
 
@@ -88,8 +79,6 @@ async def _run(
     description: str,
     price_eur: int,
     price_type: Literal['FIXED', 'NEGOTIABLE', 'GIVE_AWAY'],
-    ad_type: Literal['OFFER', 'WANTED'],
-    zip_code: str,
     images: list[str],
 ) -> str:
     await _close_session()
@@ -106,9 +95,7 @@ async def _run(
     await ensure_logged_in(page)
     await page.goto(_POST_URL, wait_until='domcontentloaded')
 
-    # Ad type radio (sr-only inputs — use JS click to bypass visibility check)
-    await page.evaluate(f"document.querySelector('#ad-type-{ad_type}').click()")
-
+    await page.evaluate("document.querySelector('#ad-type-OFFER').click()")
     await page.fill('#ad-title', title[:65])
     await page.fill('#ad-description', description[:4000])
 
@@ -118,15 +105,11 @@ async def _run(
     if price_type != 'FIXED':
         await _select_price_type(page, price_type)
 
-    if zip_code:
-        await page.fill('#ad-zip-code', zip_code)
-
     if local_images:
         await page.set_input_files('input[type=file][accept*="image"]', [str(p) for p in local_images])
         await page.wait_for_timeout(500)
 
-    note = ' Please select a category before submitting.' if True else ''
-    return f'Form filled.{note} Review in the browser and click "Anzeige aufgeben" to submit.'
+    return 'Form filled. Please select a category, then click "Anzeige aufgeben" to submit.'
 
 
 async def _select_price_type(page, price_type: str) -> None:
@@ -157,7 +140,14 @@ async def _close_session() -> None:
 def _resolve_images(images: list[str], tmpdir: Path) -> list[Path]:
     resolved: list[Path] = []
     for index, source in enumerate(images[:20]):
-        if source.startswith('https://') or source.startswith('http://'):
+        if source.startswith('data:'):
+            match = re.match(r'data:image/(\w+);base64,(.+)', source, re.DOTALL)
+            if match:
+                ext, data = match.group(1), match.group(2)
+                destination = tmpdir / f'image_{index:02d}.{ext}'
+                destination.write_bytes(base64.b64decode(data))
+                resolved.append(destination)
+        elif source.startswith('https://') or source.startswith('http://'):
             extension = Path(source.split('?')[0]).suffix.lower() or '.jpg'
             destination = tmpdir / f'image_{index:02d}{extension}'
             urllib.request.urlretrieve(source, destination)
@@ -174,9 +164,7 @@ def register(mcp: FastMCP) -> None:
         description: str,
         price_eur: int = 0,
         price_type: Literal['FIXED', 'NEGOTIABLE', 'GIVE_AWAY'] = 'FIXED',
-        ad_type: Literal['OFFER', 'WANTED'] = 'OFFER',
-        zip_code: str = '',
         images: list[str] = [],
     ) -> str:
-        """Fill in a Kleinanzeigen listing form. Browser stays open for manual category selection and submit. Images accept local paths or https:// URLs."""
-        return await _run(title, description, price_eur, price_type, ad_type, zip_code, images)
+        """Fill in a Kleinanzeigen listing form. Browser stays open for manual category selection and submit."""
+        return await _run(title, description, price_eur, price_type, images)

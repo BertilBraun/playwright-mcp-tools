@@ -54,7 +54,7 @@ def _render_card(desc: dict) -> str:
     description = desc['description']
     params = desc.get('parameters', {})
     action = name.split('_')[0]
-    endpoint = f'/dailydose/{action}/'
+    endpoint = desc.get('endpoint') or f'/dailydose/{action}/'
 
     fields: list[str] = []
     for param_name, param_info in params.items():
@@ -69,6 +69,8 @@ def _render_card(desc: dict) -> str:
                 f'<option value="{v}"{"selected" if v == default else ""}>{v}</option>' for v in param_info['enum']
             )
             control = f'<select data-param="{param_name}" data-kind="string">{options}</select>'
+        elif kind == 'files':
+            control = f'<input type="file" data-param="{param_name}" data-kind="files" multiple accept="image/*">'
         elif kind == 'array':
             control = (
                 f'<textarea data-param="{param_name}" data-kind="array" placeholder="one item per line"></textarea>'

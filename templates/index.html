@@ -78,10 +78,18 @@
         resultDiv.style.display = 'block';
 
         const body = {};
+        const filePromises = [];
         form.querySelectorAll('[data-param]').forEach(el => {
           const name = el.dataset.param;
           const kind = el.dataset.kind;
-          if (kind === 'integer') {
+          if (kind === 'files') {
+            const promise = Promise.all(Array.from(el.files).map(file => new Promise(resolve => {
+              const reader = new FileReader();
+              reader.onload = e => resolve(e.target.result);
+              reader.readAsDataURL(file);
+            }))).then(dataUrls => { body[name] = dataUrls; });
+            filePromises.push(promise);
+          } else if (kind === 'integer') {
             body[name] = parseInt(el.value, 10);
           } else if (kind === 'number') {
             body[name] = parseFloat(el.value);
@@ -91,6 +99,7 @@
             body[name] = el.value;
           }
         });
+        await Promise.all(filePromises);
 
         try {
           const resp = await fetch(form.dataset.endpoint, {
