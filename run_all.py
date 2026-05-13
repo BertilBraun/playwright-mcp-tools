@@ -19,8 +19,8 @@ _SERVICES = dailydose.services + kleinanzeigen.services
 _TEMPLATE = (Path(__file__).parent / 'templates' / 'index.html').read_text(encoding='utf-8')
 
 app = FastAPI(title='MCP Services')
-for _svc in _SERVICES:
-    app.include_router(_svc.router)
+for service in _SERVICES:
+    app.include_router(service.router)
 
 
 @app.get('/', response_class=HTMLResponse)
@@ -33,7 +33,7 @@ def overview() -> str:
 
 
 def _render_section(category: str, services: list) -> str:
-    cards = [_render_card(svc.TOOL_DESCRIPTION) for svc in services]
+    cards = [_render_card(service.TOOL_DESCRIPTION) for service in services]
     count = len(cards)
     noun = 'tool' if count == 1 else 'tools'
     return (
@@ -94,8 +94,8 @@ def _render_card(desc: dict) -> str:
 
 def _start_mcp() -> None:
     mcp = FastMCP('MCP Services', host='0.0.0.0', port=8001)
-    for svc in _SERVICES:
-        svc.register(mcp)
+    for service in _SERVICES:
+        service.register(mcp)
     mcp.run(transport='sse')
 
 

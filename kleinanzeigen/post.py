@@ -113,33 +113,49 @@ def _worker(
         local_images = _resolve_images(images, Path(tmpdir))
         try:
             with sync_playwright() as playwright:
+                print('[post] Launching browser...')
                 context = start_persistent_context(playwright)
                 page = context.new_page()
                 ensure_logged_in(page)
+
+                print(f'[post] Navigating to listing form: {_POST_URL}')
                 page.goto(_POST_URL, wait_until='domcontentloaded')
 
+                print('[post] Setting ad type to OFFER...')
                 page.evaluate("document.querySelector('#ad-type-OFFER').click()")
+
+                print(f'[post] Filling title: {title[:65]!r}')
                 page.fill('#ad-title', title[:65])
+
+                print(f'[post] Filling description ({len(description)} chars)...')
                 page.fill('#ad-description', description[:4000])
 
                 if price_eur > 0:
+                    print(f'[post] Filling price: {price_eur}')
                     page.fill('#ad-price-amount', str(price_eur))
 
                 if price_type != 'FIXED':
                     label = _PRICE_TYPE_LABELS[price_type]
+                    print(f'[post] Selecting price type: {label}')
                     page.click('#ad-price-type')
                     page.wait_for_timeout(300)
                     option = page.get_by_role('option', name=label)
                     if option.count():
                         option.click()
+                    else:
+                        print(f'[post] Warning: price type option "{label}" not found in dropdown')
 
                 if local_images:
+                    print(f'[post] Uploading {len(local_images)} image(s)...')
                     page.set_input_files('input[type=file][accept*="image"]', [str(p) for p in local_images])
                     page.wait_for_timeout(500)
 
+                print('[post] Form filled. Waiting for browser to close...')
                 queue.put('Form filled. Please select a category, then click "Anzeige aufgeben" to submit.')
                 page.wait_for_event('close', timeout=0)
+                print('[post] Browser closed.')
         except Exception as exc:
+            print(f'[post] Error: {exc}')
             queue.put(f'Error: {exc}')
 
 

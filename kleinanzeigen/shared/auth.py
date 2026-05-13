@@ -19,27 +19,36 @@ def start_persistent_context(playwright: Playwright) -> BrowserContext:
 
 
 def ensure_logged_in(page: Page) -> None:
+    print('[auth] Navigating to home page...')
     page.goto(_HOME_URL, wait_until='networkidle')
     page.wait_for_timeout(2000)
 
     if not page.locator('[data-testid="login-button"]').count():
+        print('[auth] Already logged in, skipping login.')
         return
 
+    print('[auth] Login button found, starting login flow...')
     email = os.environ['KLEINANZEIGEN_EMAIL']
     password = os.environ['KLEINANZEIGEN_PASSWORD']
 
     page.locator('[data-testid="login-button"]').click()
+    print('[auth] Clicked login button, waiting for login page...')
     page.wait_for_url(f'{_LOGIN_URL}**', wait_until='networkidle')
     page.wait_for_timeout(2000)
 
+    print('[auth] Filling email...')
     page.fill('input[name="username"]', email)
     page.wait_for_timeout(500)
     page.click('button._button-login-id')
+    print('[auth] Clicked "Weiter", waiting for password field...')
     page.wait_for_selector('input[name="password"]', state='visible')
     page.wait_for_timeout(2000)
 
+    print('[auth] Filling password...')
     page.fill('input[name="password"]', password)
     page.wait_for_timeout(500)
     page.click('button._button-login-password')
+    print('[auth] Clicked "Einloggen", waiting for redirect...')
     page.wait_for_url(f'{_HOME_URL}**', wait_until='networkidle')
     page.wait_for_timeout(2000)
+    print('[auth] Login complete.')
