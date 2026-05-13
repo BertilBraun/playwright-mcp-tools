@@ -15,7 +15,7 @@ _POST_URL = 'https://www.kleinanzeigen.de/p-anzeige-aufgeben-schritt2.html'
 
 _PRICE_TYPE_LABELS: dict[str, str] = {
     'FIXED': 'Festpreis',
-    'NEGOTIABLE': 'Verhandlungsbasis',
+    'NEGOTIABLE': 'VB',
     'GIVE_AWAY': 'Zu verschenken',
 }
 
