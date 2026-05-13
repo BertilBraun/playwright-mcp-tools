@@ -11,6 +11,7 @@ from fastapi.responses import HTMLResponse
 from mcp.server.fastmcp import FastMCP
 
 from dailydose import delete, fetch, post, scrape
+from kleinanzeigen import post as ka_post
 
 load_dotenv()
 
@@ -19,8 +20,9 @@ app.include_router(scrape.router)
 app.include_router(fetch.router)
 app.include_router(post.router)
 app.include_router(delete.router)
+app.include_router(ka_post.router)
 
-_SERVICES = [scrape, fetch, post, delete]
+_SERVICES = [scrape, fetch, post, delete, ka_post]
 _TEMPLATE = (Path(__file__).parent / 'templates' / 'index.html').read_text(encoding='utf-8')
 
 
@@ -95,11 +97,12 @@ def _render_card(desc: dict) -> str:
 
 
 def _start_mcp() -> None:
-    mcp = FastMCP('DailyDose Tools', host='0.0.0.0', port=8001)
+    mcp = FastMCP('MCP Services', host='0.0.0.0', port=8001)
     scrape.register(mcp)
     fetch.register(mcp)
     post.register(mcp)
     delete.register(mcp)
+    ka_post.register(mcp)
     mcp.run(transport='sse')
 
 
