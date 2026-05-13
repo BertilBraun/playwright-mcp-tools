@@ -126,9 +126,22 @@ def _worker(
 
                 print(f'[post] Filling title: {title[:65]!r}')
                 page.fill('#ad-title', title[:65])
+                page.wait_for_timeout(1000)
 
                 print(f'[post] Filling description ({len(description)} chars)...')
                 page.fill('#ad-description', description[:4000])
+
+                print('[post] Waiting for category suggestions...')
+                try:
+                    page.wait_for_selector('#ad-category-picker input[type="radio"]', state='visible', timeout=8000)
+                    page.wait_for_timeout(500)
+                    first_radio_id = page.locator('#ad-category-picker input[type="radio"]').first.get_attribute('id')
+                    label_text = page.locator(f'label[for="{first_radio_id}"]').inner_text()
+                    print(f'[post] Selecting first suggested category: {label_text!r}')
+                    page.evaluate('document.querySelector(\'#ad-category-picker input[type="radio"]\').click()')
+                    page.wait_for_timeout(500)
+                except Exception:
+                    print('[post] No category suggestions appeared, skipping auto-select.')
 
                 if price_eur > 0:
                     print(f'[post] Filling price: {price_eur}')
@@ -168,6 +181,9 @@ def _worker(
             queue.put(f'Error: {exc}')
 
 
+_MAX_IMAGE_BYTES = 12 * 1024 * 1024
+
+
 def _resolve_images(images: list[str], tmpdir: Path) -> list[Path]:
     resolved: list[Path] = []
     for index, source in enumerate(images[:20]):
@@ -177,15 +193,34 @@ def _resolve_images(images: list[str], tmpdir: Path) -> list[Path]:
                 ext, data = match.group(1), match.group(2)
                 destination = tmpdir / f'image_{index:02d}.{ext}'
                 destination.write_bytes(base64.b64decode(data))
-                resolved.append(destination)
+                resolved.append(_compress_if_needed(destination, tmpdir, index))
         elif source.startswith('https://') or source.startswith('http://'):
             extension = Path(source.split('?')[0]).suffix.lower() or '.jpg'
             destination = tmpdir / f'image_{index:02d}{extension}'
             urllib.request.urlretrieve(source, destination)
-            resolved.append(destination)
+            resolved.append(_compress_if_needed(destination, tmpdir, index))
         else:
-            resolved.append(Path(source))
+            resolved.append(_compress_if_needed(Path(source), tmpdir, index))
     return resolved
+
+
+def _compress_if_needed(path: Path, tmpdir: Path, index: int) -> Path:
+    size_mb = path.stat().st_size / 1024 / 1024
+    if path.stat().st_size <= _MAX_IMAGE_BYTES:
+        return path
+
+    from PIL import Image
+
+    print(f'[post] Image {path.name} is {size_mb:.1f} MB, compressing...')
+    img = Image.open(path).convert('RGB')
+    output = tmpdir / f'image_{index:02d}_compressed.jpg'
+    for quality in range(85, 10, -10):
+        img.save(output, 'JPEG', quality=quality)
+        if output.stat().st_size <= _MAX_IMAGE_BYTES:
+            print(f'[post] Compressed to {output.stat().st_size / 1024 / 1024:.1f} MB (quality={quality})')
+            return output
+
+    raise ValueError(f'{path.name} cannot be compressed below 12 MB')
 
 
 def register(mcp: FastMCP) -> None:
