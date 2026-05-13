@@ -6,7 +6,6 @@ from playwright.sync_api import BrowserContext, Page, Playwright
 from kleinanzeigen.shared.log import log
 
 _PROFILE_DIR = Path(os.environ.get('KLEINANZEIGEN_PROFILE_DIR', str(Path.home() / '.kleinanzeigen_profile')))
-_HOME_URL = 'https://www.kleinanzeigen.de'
 
 
 def start_persistent_context(playwright: Playwright) -> BrowserContext:
@@ -19,23 +18,18 @@ def start_persistent_context(playwright: Playwright) -> BrowserContext:
     )
 
 
-def ensure_logged_in(page: Page) -> None:
-    log('[auth] Navigating to home page...')
-    page.goto(_HOME_URL, wait_until='load')
+def ensure_logged_in(page: Page, target_url: str) -> None:
+    log(f'[auth] Navigating to {target_url}...')
+    page.goto(target_url, wait_until='load')
     page.wait_for_timeout(2000)
 
-    if not page.locator('[data-testid="login-button"]').count():
+    if not page.locator('input[name="username"]').count():
         log('[auth] Already logged in, skipping login.')
         return
 
-    log('[auth] Login button found, starting login flow...')
+    log('[auth] Login form detected, starting login flow...')
     email = os.environ['KLEINANZEIGEN_EMAIL']
     password = os.environ['KLEINANZEIGEN_PASSWORD']
-
-    page.locator('[data-testid="login-button"]').click()
-    log('[auth] Clicked login button, waiting for email field...')
-    page.wait_for_selector('input[name="username"]', state='visible', timeout=60000)
-    page.wait_for_timeout(2000)
 
     log('[auth] Filling email...')
     page.fill('input[name="username"]', email)
@@ -49,7 +43,7 @@ def ensure_logged_in(page: Page) -> None:
     page.fill('input[name="password"]', password)
     page.wait_for_timeout(500)
     page.click('button._button-login-password')
-    log('[auth] Clicked "Einloggen", waiting for login button to disappear...')
-    page.wait_for_selector('[data-testid="login-button"]', state='hidden', timeout=60000)
+    log('[auth] Clicked "Einloggen", waiting for login to complete...')
+    page.wait_for_selector('input[name="username"]', state='hidden', timeout=60000)
     page.wait_for_timeout(2000)
     log('[auth] Login complete.')

@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import re
 import tempfile
@@ -67,7 +68,7 @@ def describe() -> dict:
 
 @router.post('/')
 async def run(request: PostRequest) -> str:
-    return _run(
+    return await _run(
         request.title,
         request.description,
         request.price_eur,
@@ -76,14 +77,14 @@ async def run(request: PostRequest) -> str:
     )
 
 
-def _run(
+async def _run(
     title: str,
     description: str,
     price_eur: int,
     price_type: Literal['FIXED', 'NEGOTIABLE', 'GIVE_AWAY'],
     images: list[str],
 ) -> str:
-    return _run_sync(title, description, price_eur, price_type, images)
+    return await asyncio.to_thread(_run_sync, title, description, price_eur, price_type, images)
 
 
 def _run_sync(
@@ -122,10 +123,7 @@ def _run_sync(
                     _active_context = context
 
                 page = context.new_page()
-                ensure_logged_in(page)
-
-                log(f'[post] Navigating to listing form: {_POST_URL}')
-                page.goto(_POST_URL, wait_until='load')
+                ensure_logged_in(page, _POST_URL)
 
                 log('[post] Setting ad type to OFFER...')
                 page.evaluate("document.querySelector('#ad-type-OFFER').click()")
@@ -234,4 +232,4 @@ def register(mcp: FastMCP) -> None:
         images: list[str] = [],
     ) -> str:
         """Fill in a Kleinanzeigen listing form. Browser stays open for review before submitting."""
-        return _run(title, description, price_eur, price_type, images)
+        return await _run(title, description, price_eur, price_type, images)
