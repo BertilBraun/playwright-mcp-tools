@@ -24,8 +24,8 @@ TOOL_DESCRIPTION = {
     'endpoint': '/kleinanzeigen/post/',
     'description': (
         'Fill in a new Kleinanzeigen listing form. '
-        'The browser stays open so you can select the category and submit manually. '
-        'First-time use: set KLEINANZEIGEN_HEADLESS=false to log in — the session is then saved.'
+        'The browser stays open for review before submitting. '
+        'Requires KLEINANZEIGEN_EMAIL and KLEINANZEIGEN_PASSWORD.'
     ),
     'parameters': {
         'title': {'type': 'string', 'description': 'Listing title (max 65 characters)'},
@@ -175,7 +175,7 @@ def _worker(
                     page.wait_for_timeout(2000)
 
                 print('[post] Form filled. Waiting for browser to close...')
-                queue.put('Form filled. Please select a category, then click "Anzeige aufgeben" to submit.')
+                queue.put('Form filled. Review in the browser and click "Anzeige aufgeben" to submit.')
                 page.wait_for_event('close', timeout=0)
                 print('[post] Browser closed.')
         except Exception as exc:
