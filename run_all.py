@@ -87,7 +87,7 @@ def _render_card(desc: dict) -> str:
         f'  <p class="desc">{description}</p>\n'
         f'  <form class="tool-form" data-endpoint="{endpoint}">\n'
         f'    <div class="form-grid">{fields_html}</div>\n'
-        f'    <button class="run-btn" type="submit">Run Test</button>\n'
+        f'    <button class="run-btn" type="submit">Run</button>\n'
         f'    <div class="result" style="display:none"><pre></pre></div>\n'
         f'  </form>\n'
         f'</div>'
@@ -103,16 +103,11 @@ def _start_mcp() -> None:
     mcp.run(transport='sse')
 
 
-async def _serve(production: bool) -> None:
-    if production:
-        mcp_thread = threading.Thread(target=_start_mcp, daemon=True)
-        mcp_thread.start()
-        print('MCP SSE server starting on http://localhost:8001/sse')
-        config = uvicorn.Config(app, host='0.0.0.0', port=8000, log_level='info')
-    else:
-        print('Dev mode: MCP server disabled, reload enabled')
-        config = uvicorn.Config('run_all:app', host='0.0.0.0', port=8000, log_level='info', reload=True)
-
+async def _serve() -> None:
+    mcp_thread = threading.Thread(target=_start_mcp, daemon=True)
+    mcp_thread.start()
+    print('MCP SSE server starting on http://localhost:8001/sse')
+    config = uvicorn.Config(app, host='0.0.0.0', port=8000, log_level='info')
     await uvicorn.Server(config).serve()
 
 
@@ -120,4 +115,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--production', action='store_true')
     args = parser.parse_args()
-    asyncio.run(_serve(args.production))
+
+    if args.production:
+        asyncio.run(_serve())
+    else:
+        print('Dev mode: MCP server disabled, reload enabled')
+        uvicorn.run('run_all:app', host='0.0.0.0', port=8000, log_level='info', reload=True)
