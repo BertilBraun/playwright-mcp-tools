@@ -11,7 +11,7 @@ from dailydose import delete, fetch, post, scrape
 
 load_dotenv()
 
-mcp = FastMCP('DailyDose Tools')
+mcp = FastMCP('DailyDose Tools', host='0.0.0.0', port=8001)
 scrape.register(mcp)
 fetch.register(mcp)
 post.register(mcp)
@@ -103,7 +103,7 @@ def _render_card(desc: dict) -> str:
 
 
 def _start_mcp() -> None:
-    mcp.run(transport='sse', host='0.0.0.0', port=8001)
+    mcp.run(transport='sse')
 
 
 async def _serve() -> None:
