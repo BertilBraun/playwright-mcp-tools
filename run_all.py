@@ -10,20 +10,18 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from mcp.server.fastmcp import FastMCP
 
-from dailydose import delete, fetch, post, scrape
-from kleinanzeigen import post as ka_post
+import dailydose
+import kleinanzeigen
 
 load_dotenv()
 
-app = FastAPI(title='MCP Services')
-app.include_router(scrape.router)
-app.include_router(fetch.router)
-app.include_router(post.router)
-app.include_router(delete.router)
-app.include_router(ka_post.router)
-
-_SERVICES = [scrape, fetch, post, delete, ka_post]
+_PACKAGES = [dailydose, kleinanzeigen]
+_SERVICES = [svc for pkg in _PACKAGES for svc in pkg.services]
 _TEMPLATE = (Path(__file__).parent / 'templates' / 'index.html').read_text(encoding='utf-8')
+
+app = FastAPI(title='MCP Services')
+for _svc in _SERVICES:
+    app.include_router(_svc.router)
 
 
 @app.get('/', response_class=HTMLResponse)
@@ -31,21 +29,19 @@ def overview() -> str:
     sorted_services = sorted(_SERVICES, key=lambda m: m.__package__ or '')
     sections = []
     for category, group in groupby(sorted_services, key=lambda m: m.__package__ or 'other'):
-        services = list(group)
-        sections.append(_render_section(category, services))
+        sections.append(_render_section(category, list(group)))
     return _TEMPLATE.replace('{{SECTIONS}}', '\n'.join(sections))
 
 
 def _render_section(category: str, services: list) -> str:
     cards = [_render_card(svc.TOOL_DESCRIPTION) for svc in services]
-    cards_html = '\n'.join(cards)
     count = len(cards)
     noun = 'tool' if count == 1 else 'tools'
     return (
         f'<details class="category" open>\n'
         f'  <summary>{category} <span class="count">({count} {noun})</span></summary>\n'
-        f'  <div class="category-tools">\n{cards_html}\n  </div>\n'
-        f'</details>'
+        f'  <div class="category-tools">\n' + '\n'.join(cards) + '\n  </div>\n'
+        '</details>'
     )
 
 
@@ -99,11 +95,8 @@ def _render_card(desc: dict) -> str:
 
 def _start_mcp() -> None:
     mcp = FastMCP('MCP Services', host='0.0.0.0', port=8001)
-    scrape.register(mcp)
-    fetch.register(mcp)
-    post.register(mcp)
-    delete.register(mcp)
-    ka_post.register(mcp)
+    for svc in _SERVICES:
+        svc.register(mcp)
     mcp.run(transport='sse')
 
 
