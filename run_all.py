@@ -15,8 +15,7 @@ import kleinanzeigen
 
 load_dotenv()
 
-_PACKAGES = [dailydose, kleinanzeigen]
-_SERVICES = [svc for pkg in _PACKAGES for svc in pkg.services]
+_SERVICES = dailydose.services + kleinanzeigen.services
 _TEMPLATE = (Path(__file__).parent / 'templates' / 'index.html').read_text(encoding='utf-8')
 
 app = FastAPI(title='MCP Services')

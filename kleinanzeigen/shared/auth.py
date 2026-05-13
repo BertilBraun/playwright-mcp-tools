@@ -19,7 +19,9 @@ def start_persistent_context(playwright: Playwright) -> BrowserContext:
 
 
 def ensure_logged_in(page: Page) -> None:
-    page.goto(_HOME_URL, wait_until='domcontentloaded')
+    page.goto(_HOME_URL, wait_until='networkidle')
+    page.wait_for_timeout(2000)
+
     if not page.locator('[data-testid="login-button"]').count():
         return
 
@@ -27,12 +29,17 @@ def ensure_logged_in(page: Page) -> None:
     password = os.environ['KLEINANZEIGEN_PASSWORD']
 
     page.locator('[data-testid="login-button"]').click()
-    page.wait_for_url(f'{_LOGIN_URL}**', wait_until='domcontentloaded')
+    page.wait_for_url(f'{_LOGIN_URL}**', wait_until='networkidle')
+    page.wait_for_timeout(2000)
 
     page.fill('input[name="username"]', email)
+    page.wait_for_timeout(500)
     page.click('button._button-login-id')
-    page.wait_for_selector('input[name="password"]')
+    page.wait_for_selector('input[name="password"]', state='visible')
+    page.wait_for_timeout(2000)
 
     page.fill('input[name="password"]', password)
+    page.wait_for_timeout(500)
     page.click('button._button-login-password')
-    page.wait_for_url(f'{_HOME_URL}**', wait_until='domcontentloaded')
+    page.wait_for_url(f'{_HOME_URL}**', wait_until='networkidle')
+    page.wait_for_timeout(2000)
