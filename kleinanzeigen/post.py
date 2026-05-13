@@ -124,24 +124,26 @@ def _worker(
                 print('[post] Setting ad type to OFFER...')
                 page.evaluate("document.querySelector('#ad-type-OFFER').click()")
 
-                print(f'[post] Filling title: {title[:65]!r}')
-                page.fill('#ad-title', title[:65])
+                if len(title) > 65:
+                    raise ValueError(f'Title too long: {len(title)} characters (max 65)')
+                if len(description) > 4000:
+                    raise ValueError(f'Description too long: {len(description)} characters (max 4000)')
+
+                print(f'[post] Filling title: {title!r}')
+                page.fill('#ad-title', title)
                 page.wait_for_timeout(1000)
 
                 print(f'[post] Filling description ({len(description)} chars)...')
-                page.fill('#ad-description', description[:4000])
+                page.fill('#ad-description', description)
 
                 print('[post] Waiting for category suggestions...')
-                try:
-                    page.wait_for_selector('#ad-category-picker input[type="radio"]', state='visible', timeout=8000)
-                    page.wait_for_timeout(500)
-                    first_radio_id = page.locator('#ad-category-picker input[type="radio"]').first.get_attribute('id')
-                    label_text = page.locator(f'label[for="{first_radio_id}"]').inner_text()
-                    print(f'[post] Selecting first suggested category: {label_text!r}')
-                    page.evaluate('document.querySelector(\'#ad-category-picker input[type="radio"]\').click()')
-                    page.wait_for_timeout(500)
-                except Exception:
-                    print('[post] No category suggestions appeared, skipping auto-select.')
+                page.wait_for_selector('#ad-category-picker input[type="radio"]', state='visible', timeout=8000)
+                page.wait_for_timeout(500)
+                first_radio_id = page.locator('#ad-category-picker input[type="radio"]').first.get_attribute('id')
+                label_text = page.locator(f'label[for="{first_radio_id}"]').inner_text()
+                print(f'[post] Selecting first suggested category: {label_text!r}')
+                page.evaluate('document.querySelector(\'#ad-category-picker input[type="radio"]\').click()')
+                page.wait_for_timeout(500)
 
                 if price_eur > 0:
                     print(f'[post] Filling price: {price_eur}')
@@ -162,8 +164,8 @@ def _worker(
                         page.wait_for_selector('[role="listbox"]', state='hidden', timeout=5000)
                         print(f'[post] Price type set to "{label}".')
                     else:
-                        print(f'[post] Warning: option "{label}" not found, closing dropdown')
                         page.keyboard.press('Escape')
+                        raise ValueError(f'Price type option "{label}" not found in dropdown')
 
                 if local_images:
                     paths = [str(p) for p in local_images]
