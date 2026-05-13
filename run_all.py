@@ -1,5 +1,7 @@
 import asyncio
 import threading
+from itertools import groupby
+from pathlib import Path
 
 import uvicorn
 from dotenv import load_dotenv
@@ -24,117 +26,30 @@ app.include_router(post.router)
 app.include_router(delete.router)
 
 _SERVICES = [scrape, fetch, post, delete]
-
-_HTML_TEMPLATE = """\
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>MCP Services</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; }
-    body { font-family: system-ui, sans-serif; max-width: 860px; margin: 48px auto; padding: 0 24px; color: #1a1a1a; }
-    h1 { font-size: 1.5rem; margin-bottom: 4px; }
-    .subtitle { color: #666; margin-bottom: 36px; font-size: 0.9rem; }
-
-    .card { border: 1px solid #e0e0e0; border-radius: 10px; padding: 24px; margin-bottom: 20px; }
-    .card h2 { margin: 0 0 6px; font-size: 1rem; font-family: monospace; color: #0057b7; }
-    .card .desc { color: #333; margin: 0 0 18px; line-height: 1.5; font-size: 0.95rem; }
-
-    .form-grid { display: flex; flex-direction: column; gap: 10px; }
-    .field { display: grid; grid-template-columns: 160px 1fr; gap: 8px; align-items: start; }
-    .field label { font-family: monospace; font-size: 0.85rem; font-weight: bold; padding-top: 6px; }
-    .field label .ftype { font-weight: normal; color: #888; }
-    .field input, .field select, .field textarea {
-      width: 100%; padding: 5px 8px; border: 1px solid #ccc; border-radius: 5px;
-      font-size: 0.88rem; font-family: inherit; background: #fafafa;
-    }
-    .field textarea { resize: vertical; min-height: 64px; }
-    .field .fdesc { font-size: 0.78rem; color: #777; grid-column: 2; margin-top: -4px; }
-
-    .run-btn {
-      margin-top: 12px; padding: 7px 20px; background: #0057b7; color: #fff;
-      border: none; border-radius: 6px; font-size: 0.9rem; cursor: pointer;
-    }
-    .run-btn:hover { background: #004494; }
-    .run-btn:disabled { background: #aaa; cursor: default; }
-
-    .result { margin-top: 16px; }
-    .result pre {
-      background: #f4f4f4; border: 1px solid #ddd; border-radius: 6px;
-      padding: 12px; font-size: 0.8rem; white-space: pre-wrap; word-break: break-all;
-      max-height: 400px; overflow-y: auto; margin: 0;
-    }
-    .result.error pre { background: #fff4f4; border-color: #f5b7b7; color: #c00; }
-  </style>
-</head>
-<body>
-  <h1>MCP Services</h1>
-  <p class="subtitle">
-    REST API: <strong>http://localhost:8000</strong>
-    &nbsp;|&nbsp;
-    MCP (SSE): <strong>http://localhost:8001/sse</strong>
-  </p>
-  {{CARDS}}
-  <script>
-    document.querySelectorAll('.tool-form').forEach(form => {
-      form.addEventListener('submit', async e => {
-        e.preventDefault();
-        const btn = form.querySelector('.run-btn');
-        const resultDiv = form.querySelector('.result');
-        const resultPre = resultDiv.querySelector('pre');
-
-        btn.disabled = true;
-        btn.textContent = 'Running…';
-        resultDiv.className = 'result';
-        resultPre.textContent = '';
-        resultDiv.style.display = 'block';
-
-        const body = {};
-        form.querySelectorAll('[data-param]').forEach(el => {
-          const name = el.dataset.param;
-          const kind = el.dataset.kind;
-          if (kind === 'integer') {
-            body[name] = parseInt(el.value, 10);
-          } else if (kind === 'number') {
-            body[name] = parseFloat(el.value);
-          } else if (kind === 'array') {
-            body[name] = el.value.split('\\n').map(s => s.trim()).filter(Boolean);
-          } else {
-            body[name] = el.value;
-          }
-        });
-
-        try {
-          const resp = await fetch(form.dataset.endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-          });
-          const text = await resp.text();
-          let display;
-          try { display = JSON.stringify(JSON.parse(text), null, 2); }
-          catch { display = text; }
-          if (!resp.ok) resultDiv.className = 'result error';
-          resultPre.textContent = display;
-        } catch (err) {
-          resultDiv.className = 'result error';
-          resultPre.textContent = 'Network error: ' + err.message;
-        } finally {
-          btn.disabled = false;
-          btn.textContent = 'Run';
-        }
-      });
-    });
-  </script>
-</body>
-</html>"""
+_TEMPLATE = (Path(__file__).parent / 'templates' / 'index.html').read_text(encoding='utf-8')
 
 
 @app.get('/', response_class=HTMLResponse)
 def overview() -> str:
-    cards = '\n'.join(_render_card(svc.TOOL_DESCRIPTION) for svc in _SERVICES)
-    return _HTML_TEMPLATE.replace('{{CARDS}}', cards)
+    sorted_services = sorted(_SERVICES, key=lambda m: m.__package__ or '')
+    sections = []
+    for category, group in groupby(sorted_services, key=lambda m: m.__package__ or 'other'):
+        services = list(group)
+        sections.append(_render_section(category, services))
+    return _TEMPLATE.replace('{{SECTIONS}}', '\n'.join(sections))
+
+
+def _render_section(category: str, services: list) -> str:
+    cards = [_render_card(svc.TOOL_DESCRIPTION) for svc in services]
+    cards_html = '\n'.join(cards)
+    count = len(cards)
+    noun = 'tool' if count == 1 else 'tools'
+    return (
+        f'<details class="category" open>\n'
+        f'  <summary>{category} <span class="count">({count} {noun})</span></summary>\n'
+        f'  <div class="category-tools">\n{cards_html}\n  </div>\n'
+        f'</details>'
+    )
 
 
 def _render_card(desc: dict) -> str:
