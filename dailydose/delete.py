@@ -11,6 +11,7 @@ MANAGE_URL = f'{BASE_URL}/kleinanzeigen/anmelden.htm'
 
 TOOL_DESCRIPTION = {
     'name': 'delete_listing',
+    'endpoint': '/dailydose/delete/',
     'description': 'Delete a DailyDose.de listing by ID. Requires DAILYDOSE_EMAIL and DAILYDOSE_PASSWORD.',
     'parameters': {
         'listing_id': {

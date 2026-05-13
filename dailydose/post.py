@@ -15,6 +15,7 @@ UPLOAD_URL = f'{BASE_URL}/kleinanzeigen/upload.htm'
 
 TOOL_DESCRIPTION = {
     'name': 'post_listing',
+    'endpoint': '/dailydose/post/',
     'description': (
         'Post a new listing on DailyDose.de. '
         'Images accept local file paths or https:// URLs (max 10). '

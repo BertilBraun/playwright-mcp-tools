@@ -27,6 +27,7 @@ VALID_CATEGORIES: list[str] = list(get_args(Category))
 
 TOOL_DESCRIPTION = {
     'name': 'scrape_category',
+    'endpoint': '/dailydose/scrape/',
     'description': 'Scrape a DailyDose.de category and return listings as CSV (columns: id, title, price_eur, url), sorted by price ascending.',
     'parameters': {
         'category': {

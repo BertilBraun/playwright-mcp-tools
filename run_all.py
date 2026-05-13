@@ -53,8 +53,7 @@ def _render_card(desc: dict) -> str:
     name = desc['name']
     description = desc['description']
     params = desc.get('parameters', {})
-    action = name.split('_')[0]
-    endpoint = desc.get('endpoint') or f'/dailydose/{action}/'
+    endpoint = desc['endpoint']
 
     fields: list[str] = []
     for param_name, param_info in params.items():

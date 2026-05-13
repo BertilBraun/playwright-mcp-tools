@@ -12,6 +12,7 @@ BASE_URL = 'https://www.dailydose.de'
 
 TOOL_DESCRIPTION = {
     'name': 'fetch_listing',
+    'endpoint': '/dailydose/fetch/',
     'description': 'Fetch public listing data from DailyDose.de by listing ID. Returns title, description, price, location, and image URLs.',
     'parameters': {
         'listing_id': {
