@@ -119,7 +119,7 @@ def _worker(
                 ensure_logged_in(page)
 
                 print(f'[post] Navigating to listing form: {_POST_URL}')
-                page.goto(_POST_URL, wait_until='domcontentloaded')
+                page.goto(_POST_URL, wait_until='load')
 
                 print('[post] Setting ad type to OFFER...')
                 page.evaluate("document.querySelector('#ad-type-OFFER').click()")

@@ -20,7 +20,7 @@ def start_persistent_context(playwright: Playwright) -> BrowserContext:
 
 def ensure_logged_in(page: Page) -> None:
     print('[auth] Navigating to home page...')
-    page.goto(_HOME_URL, wait_until='networkidle')
+    page.goto(_HOME_URL, wait_until='load')
     page.wait_for_timeout(2000)
 
     if not page.locator('[data-testid="login-button"]').count():
@@ -33,7 +33,7 @@ def ensure_logged_in(page: Page) -> None:
 
     page.locator('[data-testid="login-button"]').click()
     print('[auth] Clicked login button, waiting for login page...')
-    page.wait_for_url(f'{_LOGIN_URL}**', wait_until='networkidle')
+    page.wait_for_url(f'{_LOGIN_URL}**', wait_until='load')
     page.wait_for_timeout(2000)
 
     print('[auth] Filling email...')
@@ -49,6 +49,6 @@ def ensure_logged_in(page: Page) -> None:
     page.wait_for_timeout(500)
     page.click('button._button-login-password')
     print('[auth] Clicked "Einloggen", waiting for redirect...')
-    page.wait_for_url(f'{_HOME_URL}**', wait_until='networkidle')
+    page.wait_for_url(f'{_HOME_URL}**', wait_until='load')
     page.wait_for_timeout(2000)
     print('[auth] Login complete.')
