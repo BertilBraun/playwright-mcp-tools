@@ -29,7 +29,7 @@ uv sync
 **With pip:**
 
 ```bash
-pip install fastapi "uvicorn[standard]" "mcp[cli]" requests beautifulsoup4 playwright python-dotenv pandas
+pip install .
 ```
 
 **Then:**
