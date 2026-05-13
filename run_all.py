@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse
 import dailydose
 import kleinanzeigen
 
-load_dotenv()
+load_dotenv(Path(__file__).parent / '.env')
 
 _SERVICES = dailydose.services + kleinanzeigen.services
 _TEMPLATE = (Path(__file__).parent / 'templates' / 'index.html').read_text(encoding='utf-8')
