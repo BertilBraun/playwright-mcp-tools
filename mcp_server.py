@@ -1,10 +1,12 @@
+from pathlib import Path
+
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 
 import dailydose
 import kleinanzeigen
 
-load_dotenv()
+load_dotenv(Path(__file__).parent / '.env')
 
 mcp = FastMCP('MCP Services')
 
