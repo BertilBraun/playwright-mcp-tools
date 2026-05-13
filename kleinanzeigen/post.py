@@ -1,8 +1,8 @@
 import asyncio
 import base64
-import multiprocessing
 import re
 import tempfile
+import threading
 import urllib.request
 from pathlib import Path
 from typing import Literal
@@ -46,7 +46,9 @@ TOOL_DESCRIPTION = {
 
 router = APIRouter(prefix='/kleinanzeigen/post', tags=['kleinanzeigen'])
 
-_active_process: multiprocessing.Process | None = None
+# Kept at module level so the browser stays open after _run_sync returns.
+_active_context = None
+_active_context_lock = threading.Lock()
 
 
 class PostRequest(BaseModel):
@@ -80,55 +82,44 @@ async def _run(
     price_type: Literal['FIXED', 'NEGOTIABLE', 'GIVE_AWAY'],
     images: list[str],
 ) -> str:
-    global _active_process
-    if _active_process and _active_process.is_alive():
-        _active_process.terminate()
-        _active_process.join()
-
-    queue: multiprocessing.Queue = multiprocessing.Queue()
-    process = multiprocessing.Process(
-        target=_worker,
-        args=(queue, title, description, price_eur, price_type, images),
-        daemon=True,
-    )
-    process.start()
-    _active_process = process
-
-    return await asyncio.to_thread(_wait_for_result, queue, process)
+    return await asyncio.to_thread(_run_sync, title, description, price_eur, price_type, images)
 
 
-def _wait_for_result(queue: multiprocessing.Queue, process: multiprocessing.Process) -> str:
-    import time
-
-    deadline = time.monotonic() + 300  # 5 minute hard limit
-    while time.monotonic() < deadline:
-        try:
-            return queue.get(timeout=2)
-        except Exception:
-            if not process.is_alive():
-                return f'Error: worker process exited unexpectedly (code {process.exitcode})'
-    process.terminate()
-    return 'Error: timed out after 5 minutes'
-
-
-def _worker(
-    queue: multiprocessing.Queue,
+def _run_sync(
     title: str,
     description: str,
     price_eur: int,
     price_type: str,
     images: list[str],
-) -> None:
+) -> str:
+    global _active_context
+
     from playwright.sync_api import sync_playwright
 
     from kleinanzeigen.shared.auth import ensure_logged_in, start_persistent_context
 
+    with _active_context_lock:
+        if _active_context is not None:
+            try:
+                _active_context.close()
+            except Exception:
+                pass
+
     with tempfile.TemporaryDirectory() as tmpdir:
         try:
+            if len(title) > 65:
+                raise ValueError(f'Title too long: {len(title)} characters (max 65)')
+            if len(description) > 4000:
+                raise ValueError(f'Description too long: {len(description)} characters (max 4000)')
+
             local_images = _resolve_images(images, Path(tmpdir))
+
             with sync_playwright() as playwright:
                 print('[post] Launching browser...')
                 context = start_persistent_context(playwright)
+                with _active_context_lock:
+                    _active_context = context
+
                 page = context.new_page()
                 ensure_logged_in(page)
 
@@ -137,11 +128,6 @@ def _worker(
 
                 print('[post] Setting ad type to OFFER...')
                 page.evaluate("document.querySelector('#ad-type-OFFER').click()")
-
-                if len(title) > 65:
-                    raise ValueError(f'Title too long: {len(title)} characters (max 65)')
-                if len(description) > 4000:
-                    raise ValueError(f'Description too long: {len(description)} characters (max 4000)')
 
                 print(f'[post] Filling title: {title!r}')
                 page.fill('#ad-title', title)
@@ -167,10 +153,8 @@ def _worker(
                     label = _PRICE_TYPE_LABELS[price_type]
                     print('[post] Opening price type dropdown...')
                     page.click('#ad-price-type')
-                    print('[post] Waiting for listbox to appear...')
                     page.wait_for_selector('[role="listbox"]', state='visible', timeout=10000)
                     page.wait_for_timeout(500)
-                    print(f'[post] Looking for option "{label}"...')
                     option = page.locator(f'[role="option"]:has-text("{label}")')
                     if option.count():
                         print(f'[post] Clicking option "{label}"...')
@@ -185,16 +169,16 @@ def _worker(
                     paths = [str(p) for p in local_images]
                     print(f'[post] Uploading {len(paths)} image(s): {paths}')
                     page.set_input_files('input[type=file][accept*="image"]', paths)
-                    print('[post] Waiting for images to process...')
                     page.wait_for_timeout(2000)
 
                 print('[post] Form filled. Waiting for browser to close...')
-                queue.put('Form filled. Review in the browser and click "Anzeige aufgeben" to submit.')
                 page.wait_for_event('close', timeout=0)
                 print('[post] Browser closed.')
+                return 'Form filled. Review in the browser and click "Anzeige aufgeben" to submit.'
+
         except Exception as exc:
             print(f'[post] Error: {exc}')
-            queue.put(f'Error: {exc}')
+            return f'Error: {exc}'
 
 
 _MAX_IMAGE_BYTES = 12 * 1024 * 1024
@@ -248,5 +232,5 @@ def register(mcp: FastMCP) -> None:
         price_type: Literal['FIXED', 'NEGOTIABLE', 'GIVE_AWAY'] = 'FIXED',
         images: list[str] = [],
     ) -> str:
-        """Fill in a Kleinanzeigen listing form. Browser stays open for manual category selection and submit."""
+        """Fill in a Kleinanzeigen listing form. Browser stays open for review before submitting."""
         return await _run(title, description, price_eur, price_type, images)
