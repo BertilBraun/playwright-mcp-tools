@@ -5,7 +5,6 @@ from playwright.sync_api import BrowserContext, Page, Playwright
 
 _PROFILE_DIR = Path(os.environ.get('KLEINANZEIGEN_PROFILE_DIR', str(Path.home() / '.kleinanzeigen_profile')))
 _HOME_URL = 'https://www.kleinanzeigen.de'
-_LOGIN_URL = 'https://www.kleinanzeigen.de/m-einloggen.html'
 
 
 def start_persistent_context(playwright: Playwright) -> BrowserContext:
@@ -32,8 +31,8 @@ def ensure_logged_in(page: Page) -> None:
     password = os.environ['KLEINANZEIGEN_PASSWORD']
 
     page.locator('[data-testid="login-button"]').click()
-    print('[auth] Clicked login button, waiting for login page...')
-    page.wait_for_url(f'{_LOGIN_URL}**', wait_until='load')
+    print('[auth] Clicked login button, waiting for email field...')
+    page.wait_for_selector('input[name="username"]', state='visible', timeout=60000)
     page.wait_for_timeout(2000)
 
     print('[auth] Filling email...')
@@ -41,14 +40,14 @@ def ensure_logged_in(page: Page) -> None:
     page.wait_for_timeout(500)
     page.click('button._button-login-id')
     print('[auth] Clicked "Weiter", waiting for password field...')
-    page.wait_for_selector('input[name="password"]', state='visible')
+    page.wait_for_selector('input[name="password"]', state='visible', timeout=60000)
     page.wait_for_timeout(2000)
 
     print('[auth] Filling password...')
     page.fill('input[name="password"]', password)
     page.wait_for_timeout(500)
     page.click('button._button-login-password')
-    print('[auth] Clicked "Einloggen", waiting for redirect...')
-    page.wait_for_url(f'{_HOME_URL}**', wait_until='load')
+    print('[auth] Clicked "Einloggen", waiting for login button to disappear...')
+    page.wait_for_selector('[data-testid="login-button"]', state='hidden', timeout=60000)
     page.wait_for_timeout(2000)
     print('[auth] Login complete.')
