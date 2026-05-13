@@ -136,19 +136,28 @@ def _worker(
 
                 if price_type != 'FIXED':
                     label = _PRICE_TYPE_LABELS[price_type]
-                    print(f'[post] Selecting price type: {label}')
+                    print('[post] Opening price type dropdown...')
                     page.click('#ad-price-type')
-                    page.wait_for_timeout(300)
-                    option = page.get_by_role('option', name=label)
+                    print('[post] Waiting for listbox to appear...')
+                    page.wait_for_selector('[role="listbox"]', state='visible', timeout=10000)
+                    page.wait_for_timeout(500)
+                    print(f'[post] Looking for option "{label}"...')
+                    option = page.locator(f'[role="option"]:has-text("{label}")')
                     if option.count():
-                        option.click()
+                        print(f'[post] Clicking option "{label}"...')
+                        option.first.click()
+                        page.wait_for_selector('[role="listbox"]', state='hidden', timeout=5000)
+                        print(f'[post] Price type set to "{label}".')
                     else:
-                        print(f'[post] Warning: price type option "{label}" not found in dropdown')
+                        print(f'[post] Warning: option "{label}" not found, closing dropdown')
+                        page.keyboard.press('Escape')
 
                 if local_images:
-                    print(f'[post] Uploading {len(local_images)} image(s)...')
-                    page.set_input_files('input[type=file][accept*="image"]', [str(p) for p in local_images])
-                    page.wait_for_timeout(500)
+                    paths = [str(p) for p in local_images]
+                    print(f'[post] Uploading {len(paths)} image(s): {paths}')
+                    page.set_input_files('input[type=file][accept*="image"]', paths)
+                    print('[post] Waiting for images to process...')
+                    page.wait_for_timeout(2000)
 
                 print('[post] Form filled. Waiting for browser to close...')
                 queue.put('Form filled. Please select a category, then click "Anzeige aufgeben" to submit.')
