@@ -6,7 +6,7 @@ A collection of MCP (Model Context Protocol) services, each also exposed as a pl
 
 Each site or integration lives in its own subdirectory with its own `shared/` module:
 
-```
+```text
 run_all.py          — single entry point: REST on :8000, MCP SSE on :8001
 dailydose/          — DailyDose.de windsurfing classifieds
   scrape.py         — scrape a category → CSV
@@ -20,8 +20,21 @@ dailydose/          — DailyDose.de windsurfing classifieds
 
 ## Setup
 
+**With uv (recommended):**
+
 ```bash
 uv sync
+```
+
+**With pip:**
+
+```bash
+pip install fastapi "uvicorn[standard]" "mcp[cli]" requests beautifulsoup4 playwright python-dotenv pandas
+```
+
+**Then:**
+
+```bash
 playwright install chromium
 cp .env.example .env   # fill in credentials
 ```
@@ -32,8 +45,8 @@ cp .env.example .env   # fill in credentials
 python run_all.py
 ```
 
-- REST overview: http://localhost:8000
-- MCP SSE endpoint: http://localhost:8001/sse
+- REST overview: <http://localhost:8000>
+- MCP SSE endpoint: <http://localhost:8001/sse>
 
 ## Claude Desktop config
 
