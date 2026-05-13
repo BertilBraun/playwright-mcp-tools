@@ -1,4 +1,6 @@
+import asyncio
 import base64
+import multiprocessing
 import re
 import tempfile
 import urllib.request
@@ -8,8 +10,6 @@ from typing import Literal
 from fastapi import APIRouter
 from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel
-
-from kleinanzeigen.shared.auth import ensure_logged_in, start_persistent_context
 
 _POST_URL = 'https://www.kleinanzeigen.de/p-anzeige-aufgeben-schritt2.html'
 
@@ -46,8 +46,7 @@ TOOL_DESCRIPTION = {
 
 router = APIRouter(prefix='/kleinanzeigen/post', tags=['kleinanzeigen'])
 
-# Keeps playwright + context alive after _run() returns so the browser stays open.
-_session: dict = {}
+_active_process: multiprocessing.Process | None = None
 
 
 class PostRequest(BaseModel):
@@ -81,60 +80,67 @@ async def _run(
     price_type: Literal['FIXED', 'NEGOTIABLE', 'GIVE_AWAY'],
     images: list[str],
 ) -> str:
-    await _close_session()
+    global _active_process
+    if _active_process and _active_process.is_alive():
+        _active_process.terminate()
+        _active_process.join()
 
-    tmpdir = tempfile.TemporaryDirectory()
-    local_images = _resolve_images(images, Path(tmpdir.name))
+    queue: multiprocessing.Queue = multiprocessing.Queue()
+    process = multiprocessing.Process(
+        target=_worker,
+        args=(queue, title, description, price_eur, price_type, images),
+        daemon=True,
+    )
+    process.start()
+    _active_process = process
 
-    playwright, context = await start_persistent_context()
-    _session['playwright'] = playwright
-    _session['context'] = context
-    _session['tmpdir'] = tmpdir
-
-    page = await context.new_page()
-    await ensure_logged_in(page)
-    await page.goto(_POST_URL, wait_until='domcontentloaded')
-
-    await page.evaluate("document.querySelector('#ad-type-OFFER').click()")
-    await page.fill('#ad-title', title[:65])
-    await page.fill('#ad-description', description[:4000])
-
-    if price_eur > 0:
-        await page.fill('#ad-price-amount', str(price_eur))
-
-    if price_type != 'FIXED':
-        await _select_price_type(page, price_type)
-
-    if local_images:
-        await page.set_input_files('input[type=file][accept*="image"]', [str(p) for p in local_images])
-        await page.wait_for_timeout(500)
-
-    return 'Form filled. Please select a category, then click "Anzeige aufgeben" to submit.'
+    return await asyncio.to_thread(queue.get)
 
 
-async def _select_price_type(page, price_type: str) -> None:
-    label = _PRICE_TYPE_LABELS[price_type]
-    await page.click('#ad-price-type')
-    await page.wait_for_timeout(300)
-    option = page.get_by_role('option', name=label)
-    if await option.count():
-        await option.click()
+def _worker(
+    queue: multiprocessing.Queue,
+    title: str,
+    description: str,
+    price_eur: int,
+    price_type: str,
+    images: list[str],
+) -> None:
+    from playwright.sync_api import sync_playwright
 
+    from kleinanzeigen.shared.auth import ensure_logged_in, start_persistent_context
 
-async def _close_session() -> None:
-    if not _session:
-        return
-    try:
-        await _session['context'].close()
-    except Exception:
-        pass
-    try:
-        await _session['playwright'].stop()
-    except Exception:
-        pass
-    if 'tmpdir' in _session:
-        _session['tmpdir'].cleanup()
-    _session.clear()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        local_images = _resolve_images(images, Path(tmpdir))
+        try:
+            with sync_playwright() as playwright:
+                context = start_persistent_context(playwright)
+                page = context.new_page()
+                ensure_logged_in(page)
+                page.goto(_POST_URL, wait_until='domcontentloaded')
+
+                page.evaluate("document.querySelector('#ad-type-OFFER').click()")
+                page.fill('#ad-title', title[:65])
+                page.fill('#ad-description', description[:4000])
+
+                if price_eur > 0:
+                    page.fill('#ad-price-amount', str(price_eur))
+
+                if price_type != 'FIXED':
+                    label = _PRICE_TYPE_LABELS[price_type]
+                    page.click('#ad-price-type')
+                    page.wait_for_timeout(300)
+                    option = page.get_by_role('option', name=label)
+                    if option.count():
+                        option.click()
+
+                if local_images:
+                    page.set_input_files('input[type=file][accept*="image"]', [str(p) for p in local_images])
+                    page.wait_for_timeout(500)
+
+                queue.put('Form filled. Please select a category, then click "Anzeige aufgeben" to submit.')
+                page.wait_for_event('close', timeout=0)
+        except Exception as exc:
+            queue.put(f'Error: {exc}')
 
 
 def _resolve_images(images: list[str], tmpdir: Path) -> list[Path]:
