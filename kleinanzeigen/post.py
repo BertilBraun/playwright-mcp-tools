@@ -127,26 +127,20 @@ def _run_sync(
 
                 log('[post] Setting ad type to OFFER...')
                 page.evaluate("document.querySelector('#ad-type-OFFER').click()")
+                page.wait_for_timeout(1000)
 
                 log(f'[post] Filling title: {title!r}')
                 page.fill('#ad-title', title)
-                page.wait_for_timeout(1000)
+                page.wait_for_timeout(2000)
 
                 log(f'[post] Filling description ({len(description)} chars)...')
                 page.fill('#ad-description', description)
-
-                log('[post] Waiting for category suggestions...')
-                page.wait_for_selector('#ad-category-picker input[type="radio"]', state='visible', timeout=8000)
-                page.wait_for_timeout(500)
-                first_radio_id = page.locator('#ad-category-picker input[type="radio"]').first.get_attribute('id')
-                label_text = page.locator(f'label[for="{first_radio_id}"]').inner_text()
-                log(f'[post] Selecting first suggested category: {label_text!r}')
-                page.evaluate('document.querySelector(\'#ad-category-picker input[type="radio"]\').click()')
-                page.wait_for_timeout(500)
+                page.wait_for_timeout(1000)
 
                 if price_eur > 0:
                     log(f'[post] Filling price: {price_eur}')
                     page.fill('#ad-price-amount', str(price_eur))
+                    page.wait_for_timeout(1000)
 
                 if price_type != 'FIXED':
                     label = _PRICE_TYPE_LABELS[price_type]
@@ -169,6 +163,18 @@ def _run_sync(
                     log(f'[post] Uploading {len(paths)} image(s): {paths}')
                     page.set_input_files('input[type=file][accept*="image"]', paths)
                     page.wait_for_timeout(2000)
+
+                log('[post] Waiting for category suggestions...')
+                try:
+                    page.wait_for_selector('#ad-category-picker input[type="radio"]', state='visible', timeout=10000)
+                    page.wait_for_timeout(1000)
+                    first_radio_id = page.locator('#ad-category-picker input[type="radio"]').first.get_attribute('id')
+                    label_text = page.locator(f'label[for="{first_radio_id}"]').inner_text()
+                    log(f'[post] Selecting first suggested category: {label_text!r}')
+                    page.evaluate('document.querySelector(\'#ad-category-picker input[type="radio"]\').click()')
+                    page.wait_for_timeout(1000)
+                except Exception:
+                    log('[post] No category suggestions found, leaving for manual selection.')
 
                 log('[post] Form filled. Waiting for browser to close...')
                 page.wait_for_event('close', timeout=0)
