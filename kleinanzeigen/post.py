@@ -94,7 +94,21 @@ async def _run(
     process.start()
     _active_process = process
 
-    return await asyncio.to_thread(queue.get)
+    return await asyncio.to_thread(_wait_for_result, queue, process)
+
+
+def _wait_for_result(queue: multiprocessing.Queue, process: multiprocessing.Process) -> str:
+    import time
+
+    deadline = time.monotonic() + 300  # 5 minute hard limit
+    while time.monotonic() < deadline:
+        try:
+            return queue.get(timeout=2)
+        except Exception:
+            if not process.is_alive():
+                return f'Error: worker process exited unexpectedly (code {process.exitcode})'
+    process.terminate()
+    return 'Error: timed out after 5 minutes'
 
 
 def _worker(
@@ -110,8 +124,8 @@ def _worker(
     from kleinanzeigen.shared.auth import ensure_logged_in, start_persistent_context
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        local_images = _resolve_images(images, Path(tmpdir))
         try:
+            local_images = _resolve_images(images, Path(tmpdir))
             with sync_playwright() as playwright:
                 print('[post] Launching browser...')
                 context = start_persistent_context(playwright)
