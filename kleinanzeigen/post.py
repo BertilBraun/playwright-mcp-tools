@@ -1,4 +1,3 @@
-import asyncio
 import base64
 import re
 import tempfile
@@ -10,6 +9,8 @@ from typing import Literal
 from fastapi import APIRouter
 from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel
+
+from kleinanzeigen.shared.log import log
 
 _POST_URL = 'https://www.kleinanzeigen.de/p-anzeige-aufgeben-schritt2.html'
 
@@ -66,7 +67,7 @@ def describe() -> dict:
 
 @router.post('/')
 async def run(request: PostRequest) -> str:
-    return await _run(
+    return _run(
         request.title,
         request.description,
         request.price_eur,
@@ -75,14 +76,14 @@ async def run(request: PostRequest) -> str:
     )
 
 
-async def _run(
+def _run(
     title: str,
     description: str,
     price_eur: int,
     price_type: Literal['FIXED', 'NEGOTIABLE', 'GIVE_AWAY'],
     images: list[str],
 ) -> str:
-    return await asyncio.to_thread(_run_sync, title, description, price_eur, price_type, images)
+    return _run_sync(title, description, price_eur, price_type, images)
 
 
 def _run_sync(
@@ -115,7 +116,7 @@ def _run_sync(
             local_images = _resolve_images(images, Path(tmpdir))
 
             with sync_playwright() as playwright:
-                print('[post] Launching browser...')
+                log('[post] Launching browser...')
                 context = start_persistent_context(playwright)
                 with _active_context_lock:
                     _active_context = context
@@ -123,61 +124,61 @@ def _run_sync(
                 page = context.new_page()
                 ensure_logged_in(page)
 
-                print(f'[post] Navigating to listing form: {_POST_URL}')
+                log(f'[post] Navigating to listing form: {_POST_URL}')
                 page.goto(_POST_URL, wait_until='load')
 
-                print('[post] Setting ad type to OFFER...')
+                log('[post] Setting ad type to OFFER...')
                 page.evaluate("document.querySelector('#ad-type-OFFER').click()")
 
-                print(f'[post] Filling title: {title!r}')
+                log(f'[post] Filling title: {title!r}')
                 page.fill('#ad-title', title)
                 page.wait_for_timeout(1000)
 
-                print(f'[post] Filling description ({len(description)} chars)...')
+                log(f'[post] Filling description ({len(description)} chars)...')
                 page.fill('#ad-description', description)
 
-                print('[post] Waiting for category suggestions...')
+                log('[post] Waiting for category suggestions...')
                 page.wait_for_selector('#ad-category-picker input[type="radio"]', state='visible', timeout=8000)
                 page.wait_for_timeout(500)
                 first_radio_id = page.locator('#ad-category-picker input[type="radio"]').first.get_attribute('id')
                 label_text = page.locator(f'label[for="{first_radio_id}"]').inner_text()
-                print(f'[post] Selecting first suggested category: {label_text!r}')
+                log(f'[post] Selecting first suggested category: {label_text!r}')
                 page.evaluate('document.querySelector(\'#ad-category-picker input[type="radio"]\').click()')
                 page.wait_for_timeout(500)
 
                 if price_eur > 0:
-                    print(f'[post] Filling price: {price_eur}')
+                    log(f'[post] Filling price: {price_eur}')
                     page.fill('#ad-price-amount', str(price_eur))
 
                 if price_type != 'FIXED':
                     label = _PRICE_TYPE_LABELS[price_type]
-                    print('[post] Opening price type dropdown...')
+                    log('[post] Opening price type dropdown...')
                     page.click('#ad-price-type')
                     page.wait_for_selector('[role="listbox"]', state='visible', timeout=10000)
                     page.wait_for_timeout(500)
                     option = page.locator(f'[role="option"]:has-text("{label}")')
                     if option.count():
-                        print(f'[post] Clicking option "{label}"...')
+                        log(f'[post] Clicking option "{label}"...')
                         option.first.click()
                         page.wait_for_selector('[role="listbox"]', state='hidden', timeout=5000)
-                        print(f'[post] Price type set to "{label}".')
+                        log(f'[post] Price type set to "{label}".')
                     else:
                         page.keyboard.press('Escape')
                         raise ValueError(f'Price type option "{label}" not found in dropdown')
 
                 if local_images:
                     paths = [str(p) for p in local_images]
-                    print(f'[post] Uploading {len(paths)} image(s): {paths}')
+                    log(f'[post] Uploading {len(paths)} image(s): {paths}')
                     page.set_input_files('input[type=file][accept*="image"]', paths)
                     page.wait_for_timeout(2000)
 
-                print('[post] Form filled. Waiting for browser to close...')
+                log('[post] Form filled. Waiting for browser to close...')
                 page.wait_for_event('close', timeout=0)
-                print('[post] Browser closed.')
+                log('[post] Browser closed.')
                 return 'Form filled. Review in the browser and click "Anzeige aufgeben" to submit.'
 
         except Exception as exc:
-            print(f'[post] Error: {exc}')
+            log(f'[post] Error: {exc}')
             return f'Error: {exc}'
 
 
@@ -211,13 +212,13 @@ def _compress_if_needed(path: Path, tmpdir: Path, index: int) -> Path:
 
     from PIL import Image
 
-    print(f'[post] Image {path.name} is {size_mb:.1f} MB, compressing...')
+    log(f'[post] Image {path.name} is {size_mb:.1f} MB, compressing...')
     img = Image.open(path).convert('RGB')
     output = tmpdir / f'image_{index:02d}_compressed.jpg'
     for quality in range(85, 10, -10):
         img.save(output, 'JPEG', quality=quality)
         if output.stat().st_size <= _MAX_IMAGE_BYTES:
-            print(f'[post] Compressed to {output.stat().st_size / 1024 / 1024:.1f} MB (quality={quality})')
+            log(f'[post] Compressed to {output.stat().st_size / 1024 / 1024:.1f} MB (quality={quality})')
             return output
 
     raise ValueError(f'{path.name} cannot be compressed below 12 MB')
@@ -233,4 +234,4 @@ def register(mcp: FastMCP) -> None:
         images: list[str] = [],
     ) -> str:
         """Fill in a Kleinanzeigen listing form. Browser stays open for review before submitting."""
-        return await _run(title, description, price_eur, price_type, images)
+        return _run(title, description, price_eur, price_type, images)
