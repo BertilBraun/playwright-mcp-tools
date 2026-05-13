@@ -32,19 +32,40 @@ _HTML_TEMPLATE = """\
   <meta charset="UTF-8">
   <title>MCP Services</title>
   <style>
+    *, *::before, *::after { box-sizing: border-box; }
     body { font-family: system-ui, sans-serif; max-width: 860px; margin: 48px auto; padding: 0 24px; color: #1a1a1a; }
     h1 { font-size: 1.5rem; margin-bottom: 4px; }
     .subtitle { color: #666; margin-bottom: 36px; font-size: 0.9rem; }
+
     .card { border: 1px solid #e0e0e0; border-radius: 10px; padding: 24px; margin-bottom: 20px; }
-    .card h2 { margin: 0 0 8px; font-size: 1rem; font-family: monospace; color: #0057b7; }
-    .card .desc { color: #333; margin-bottom: 14px; line-height: 1.5; font-size: 0.95rem; }
-    .params { display: flex; flex-direction: column; gap: 5px; }
-    .param { background: #f5f5f5; border-radius: 6px; padding: 8px 12px; font-size: 0.82rem; }
-    .pname { font-family: monospace; font-weight: bold; color: #1a1a1a; }
-    .ptype { font-family: monospace; color: #888; }
-    .pdesc { color: #555; }
-    .penum { font-family: monospace; color: #666; font-size: 0.78rem; display: block; margin-top: 2px; }
-    .endpoints { margin-top: 14px; font-size: 0.8rem; color: #999; font-family: monospace; }
+    .card h2 { margin: 0 0 6px; font-size: 1rem; font-family: monospace; color: #0057b7; }
+    .card .desc { color: #333; margin: 0 0 18px; line-height: 1.5; font-size: 0.95rem; }
+
+    .form-grid { display: flex; flex-direction: column; gap: 10px; }
+    .field { display: grid; grid-template-columns: 160px 1fr; gap: 8px; align-items: start; }
+    .field label { font-family: monospace; font-size: 0.85rem; font-weight: bold; padding-top: 6px; }
+    .field label .ftype { font-weight: normal; color: #888; }
+    .field input, .field select, .field textarea {
+      width: 100%; padding: 5px 8px; border: 1px solid #ccc; border-radius: 5px;
+      font-size: 0.88rem; font-family: inherit; background: #fafafa;
+    }
+    .field textarea { resize: vertical; min-height: 64px; }
+    .field .fdesc { font-size: 0.78rem; color: #777; grid-column: 2; margin-top: -4px; }
+
+    .run-btn {
+      margin-top: 12px; padding: 7px 20px; background: #0057b7; color: #fff;
+      border: none; border-radius: 6px; font-size: 0.9rem; cursor: pointer;
+    }
+    .run-btn:hover { background: #004494; }
+    .run-btn:disabled { background: #aaa; cursor: default; }
+
+    .result { margin-top: 16px; }
+    .result pre {
+      background: #f4f4f4; border: 1px solid #ddd; border-radius: 6px;
+      padding: 12px; font-size: 0.8rem; white-space: pre-wrap; word-break: break-all;
+      max-height: 400px; overflow-y: auto; margin: 0;
+    }
+    .result.error pre { background: #fff4f4; border-color: #f5b7b7; color: #c00; }
   </style>
 </head>
 <body>
@@ -55,6 +76,57 @@ _HTML_TEMPLATE = """\
     MCP (SSE): <strong>http://localhost:8001/sse</strong>
   </p>
   {{CARDS}}
+  <script>
+    document.querySelectorAll('.tool-form').forEach(form => {
+      form.addEventListener('submit', async e => {
+        e.preventDefault();
+        const btn = form.querySelector('.run-btn');
+        const resultDiv = form.querySelector('.result');
+        const resultPre = resultDiv.querySelector('pre');
+
+        btn.disabled = true;
+        btn.textContent = 'Running…';
+        resultDiv.className = 'result';
+        resultPre.textContent = '';
+        resultDiv.style.display = 'block';
+
+        const body = {};
+        form.querySelectorAll('[data-param]').forEach(el => {
+          const name = el.dataset.param;
+          const kind = el.dataset.kind;
+          if (kind === 'integer') {
+            body[name] = parseInt(el.value, 10);
+          } else if (kind === 'number') {
+            body[name] = parseFloat(el.value);
+          } else if (kind === 'array') {
+            body[name] = el.value.split('\\n').map(s => s.trim()).filter(Boolean);
+          } else {
+            body[name] = el.value;
+          }
+        });
+
+        try {
+          const resp = await fetch(form.dataset.endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+          const text = await resp.text();
+          let display;
+          try { display = JSON.stringify(JSON.parse(text), null, 2); }
+          catch { display = text; }
+          if (!resp.ok) resultDiv.className = 'result error';
+          resultPre.textContent = display;
+        } catch (err) {
+          resultDiv.className = 'result error';
+          resultPre.textContent = 'Network error: ' + err.message;
+        } finally {
+          btn.disabled = false;
+          btn.textContent = 'Run';
+        }
+      });
+    });
+  </script>
 </body>
 </html>"""
 
@@ -70,34 +142,44 @@ def _render_card(desc: dict) -> str:
     description = desc['description']
     params = desc.get('parameters', {})
     action = name.split('_')[0]
-    prefix = f'/dailydose/{action}'
+    endpoint = f'/dailydose/{action}/'
 
-    param_items: list[str] = []
+    fields: list[str] = []
     for param_name, param_info in params.items():
-        type_str = param_info.get('type', 'string')
-        default = f' = {param_info["default"]}' if 'default' in param_info else ''
+        kind = param_info.get('type', 'string')
         param_desc = param_info.get('description', '')
-        enum_html = ''
-        if 'enum' in param_info:
-            enum_html = f'<span class="penum">options: {", ".join(param_info["enum"])}</span>'
-        param_items.append(
-            f'<div class="param">'
-            f'<span class="pname">{param_name}</span>'
-            f'<span class="ptype">: {type_str}{default}</span>'
-            f' <span class="pdesc">— {param_desc}</span>'
-            f'{enum_html}'
-            f'</div>'
-        )
+        default = param_info.get('default', '')
 
-    params_html = '\n'.join(param_items)
+        label = f'<label>{param_name} <span class="ftype">:{kind}</span></label>'
+
+        if 'enum' in param_info:
+            options = ''.join(
+                f'<option value="{v}"{"selected" if v == default else ""}>{v}</option>' for v in param_info['enum']
+            )
+            control = f'<select data-param="{param_name}" data-kind="string">{options}</select>'
+        elif kind == 'array':
+            control = (
+                f'<textarea data-param="{param_name}" data-kind="array" placeholder="one item per line"></textarea>'
+            )
+        elif kind in ('integer', 'number'):
+            step = '' if kind == 'integer' else ' step="any"'
+            control = f'<input type="number" data-param="{param_name}" data-kind="{kind}" value="{default}"{step}>'
+        else:
+            control = f'<input type="text" data-param="{param_name}" data-kind="string" value="{default}">'
+
+        fdesc = f'<span class="fdesc">{param_desc}</span>' if param_desc else ''
+        fields.append(f'<div class="field">{label}<div>{control}{fdesc}</div></div>')
+
+    fields_html = '\n'.join(fields)
     return (
         f'<div class="card">\n'
         f'  <h2>{name}</h2>\n'
         f'  <p class="desc">{description}</p>\n'
-        f'  <div class="params">{params_html}</div>\n'
-        f'  <div class="endpoints">'
-        f'GET {prefix}/ → description &nbsp;|&nbsp; POST {prefix}/ → run'
-        f'</div>\n'
+        f'  <form class="tool-form" data-endpoint="{endpoint}">\n'
+        f'    <div class="form-grid">{fields_html}</div>\n'
+        f'    <button class="run-btn" type="submit">Run</button>\n'
+        f'    <div class="result" style="display:none"><pre></pre></div>\n'
+        f'  </form>\n'
         f'</div>'
     )
 
